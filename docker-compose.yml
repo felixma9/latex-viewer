@@ -1,0 +1,35 @@
+services:
+  latex-workspace:
+    build: .
+    container_name: latex-workspace
+    restart: unless-stopped
+    ports:
+      - "8585:8080"
+    volumes:
+      - ./documents:/documents
+    labels:
+      # Opt this container in to autoheal below. Without this label autoheal
+      # ignores it (and every other container on the host).
+      autoheal: "true"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: latex-workspace-autoheal
+    restart: unless-stopped
+    environment:
+      # Only containers labelled `autoheal=true` are ever restarted.
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: "15"
+      AUTOHEAL_START_PERIOD: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
