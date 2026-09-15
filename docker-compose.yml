@@ -4,7 +4,10 @@ services:
     container_name: latex-workspace
     restart: unless-stopped
     ports:
-      - "8585:8080"
+      # Defaults to localhost only: the viewer has no login. Set
+      # LATEX_WORKSPACE_BIND=0.0.0.0 in .env to reach it from other devices
+      # (e.g. over Tailscale or your LAN). See .env.example.
+      - "${LATEX_WORKSPACE_BIND:-127.0.0.1}:${LATEX_WORKSPACE_PORT:-8585}:8080"
     volumes:
       - ./documents:/documents
     labels:
@@ -32,4 +35,5 @@ services:
       AUTOHEAL_INTERVAL: "15"
       AUTOHEAL_START_PERIOD: "30"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Rootless Docker / Podman keep the socket elsewhere; set DOCKER_SOCK.
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock

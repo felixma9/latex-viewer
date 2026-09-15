@@ -1,32 +1,43 @@
 # LaTeX Workspace
 
-A self-hosted LaTeX editor and live preview server, running as a Docker container. Replaces Overleaf for local document editing.
+A self-hosted LaTeX live preview server that runs in Docker. Edit `.tex` files in
+any editor; the PDF recompiles and refreshes in your browser. No local TeX
+installation needed. Works on Linux, macOS and Windows (Docker Desktop or WSL2).
 
-For deployment, rebuilds, health monitoring and troubleshooting, see [DEPLOY.md](DEPLOY.md).
+For deployment options, rebuilds, health monitoring and troubleshooting, see
+[DEPLOY.md](DEPLOY.md).
+
+## Quick Start
+
+Requirements: Docker with Compose v2 (`docker compose version`).
+
+```bash
+git clone git@github.com:aftahiArdi/latex-viewer.git latex-workspace
+cd latex-workspace
+docker compose up -d --build     # first build takes several minutes (TeX Live)
+```
+
+Then open <http://localhost:8585>.
+
+By default the viewer only listens on this computer. To use a different port,
+or to reach it from other devices, copy `.env.example` to `.env` and edit it
+(see [DEPLOY.md](DEPLOY.md#configuration)).
 
 ## How It Works
 
 ```
-You edit .tex in Neovim
+You save a .tex file in your editor
        ↓
-Docker container detects the save (polls every 1s)
+Container notices main.tex changed (polls every 1s)
        ↓
-latexmk recompiles main.pdf
+pdflatex builds into .build/, finished main.pdf is swapped in
        ↓
 Browser polls /mtime every 2s, detects change, reloads PDF
 ```
 
-The `documents/` folder is bind-mounted into the container. Everything you edit on the host is immediately visible to the compiler inside Docker.
-
-## Accessing the Preview
-
-Open in any browser on your Tailscale network:
-
-```
-http://felixvm.tail9b94bb.ts.net:8585
-```
-
-Select a project from the left sidebar to view its PDF. The status badge in the toolbar shows when a recompile is in progress or the PDF has updated.
+The `documents/` folder is bind-mounted into the container, so anything you edit
+on the host is immediately visible to the compiler. On Linux the compiler runs as
+the user that owns `documents/`, so generated files stay editable by you.
 
 ## Managing Projects
 
@@ -42,88 +53,79 @@ documents/
     └── main.tex
 ```
 
-To add a new project: create the folder and `main.tex`. It appears in the browser sidebar within 5 seconds. The container compiles it on first detection.
+`documents/` is gitignored, so your CVs and letters stay on your machine and are
+never committed. A fresh clone starts with an empty `documents/`.
+
+To add a project: create the folder and its `main.tex`. It appears in the sidebar
+within 5 seconds and is compiled straight away.
 
 To remove a project from the UI: delete or rename the folder.
 
 ## Editing Workflow
 
-Open a file in Neovim:
+Open `documents/<project>/main.tex` in any editor (VS Code, Neovim, Emacs, …) and
+save. The container recompiles and the browser updates within a few seconds.
 
-```bash
-nvim ~/work/latex-viewer/documents/cv-main/main.tex
-```
+If a save doesn't produce a new PDF, the compile probably failed: the last good
+PDF stays on screen, the status badge turns red and the log panel opens.
 
-Save with `:w` — the container recompiles and the browser updates automatically within a few seconds.
+### Compile log
 
-### Working with Claude
+The counters in the toolbar (errors · warnings · bad boxes) open a log panel under
+the PDF; press `L` to toggle it. Drag its top edge to resize.
 
-`claudecode.nvim` is already installed in your Neovim config:
+- **Problems** lists what `pdflatex` reported in `main.log`, errors first. Each
+  entry shows where TeX stopped and the surrounding lines of `main.tex`. Filter by
+  kind with the chips, or by text with the search box (`/`).
+- **main.log** is the full log with line numbers and highlighting. Click `log:N`
+  on a problem to jump to it; **Hide noise** drops package and font loading lines.
+- **Copy** puts the whole log on your clipboard; **Open ↗** shows the raw file.
 
-| Key | Action |
-|-----|--------|
-| `<leader>ac` | Toggle Claude panel |
-| `<leader>af` | Focus Claude panel |
-| `<leader>as` | Send visual selection to Claude |
-| `<leader>at` | Add current file to Claude context |
+A project can be linked directly as `http://localhost:8585/#<project>`.
 
-Typical flow: open the `.tex` file, hit `<leader>ac`, describe what you want ("move Education before Experience", "add a Skills section for cloud tools", "make my name larger"), Claude edits the file directly, the preview updates.
+To force a recompile without saving, click **Compile** in the browser toolbar.
 
-### VimTeX Keybindings (available in .tex files)
+### Optional: Neovim
 
-| Key | Action |
-|-----|--------|
-| `]]` / `[[` | Jump to next/previous section |
-| `cse` | Change surrounding environment |
-| `dse` | Delete surrounding environment |
-| `tse` | Toggle starred environment |
-| `<leader>ll` | (disabled — Docker handles compilation) |
-
-### Manual Compile
-
-If you want to force a recompile without saving, click the **Compile** button in the browser toolbar, or rename and re-save the file.
+- [VimTeX](https://github.com/lervag/vimtex) for motions and text objects
+  (`]]`/`[[` sections, `cse`/`dse` change/delete environment). Disable its
+  compiler, since the container compiles for you.
+- `texlab` for completions and diagnostics: `:MasonInstall texlab`.
 
 ## Starting and Stopping
 
 ```bash
-cd ~/work/latex-viewer
-
 docker compose up -d      # start
 docker compose down       # stop
 docker compose logs -f    # follow logs
 ```
 
-The container restarts automatically on server reboot (`restart: unless-stopped`).
-
-## Optional: LaTeX LSP in Neovim
-
-For completions and inline diagnostics, install `texlab` via Mason:
-
-```
-:MasonInstall texlab
-```
-
-This is a standalone binary — no local LaTeX installation needed.
+The containers restart automatically after a reboot (`restart: unless-stopped`)
+as long as Docker itself starts on boot.
 
 ## Project Structure
 
 ```
 latex-workspace/
-├── Dockerfile            # debian-slim + texlive-latex-extra + latexmk + python3
-├── docker-compose.yml    # port 8585, bind-mounts documents/
-├── server.py             # HTTP server + file watcher + latexmk runner
-└── documents/            # your .tex projects live here
+├── Dockerfile            # debian-slim + TeX Live + python3
+├── docker-compose.yml    # port mapping, documents/ bind mount, autoheal
+├── .env.example          # optional port / bind address / Docker socket settings
+├── server.py             # HTTP server, file watcher, pdflatex runner, log parser
+└── documents/            # your .tex projects live here (gitignored)
     └── cv-main/
         └── main.tex
 ```
 
 ## Adding Packages
 
-If a package is missing, add it to the `apt-get install` line in the `Dockerfile`, then rebuild:
+If a package is missing, add it to the `apt-get install` line in the `Dockerfile`,
+then rebuild:
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-Currently installed: `texlive-latex-extra`, `texlive-fonts-recommended`, `texlive-fonts-extra`. These cover most CV and report packages including `moderncv`, `geometry`, `hyperref`, `xcolor`, and `fontawesome`.
+Currently installed: `texlive-latex-extra`, `texlive-fonts-recommended`,
+`texlive-fonts-extra`. These cover most CV and report packages including
+`moderncv`, `geometry`, `hyperref`, `xcolor`, and `fontawesome`.

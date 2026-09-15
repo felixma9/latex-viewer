@@ -1,0 +1,4 @@
+# Keep LF endings on every checkout (Windows included) so files copied
+# into the Linux container behave the same everywhere.
+* text=auto eol=lf
+*.pdf binary

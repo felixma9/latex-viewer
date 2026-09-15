@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Print straight to `docker logs` instead of buffering.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 COPY server.py .
 

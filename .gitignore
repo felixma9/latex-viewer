@@ -16,6 +16,11 @@
 *.xdv
 *.run.xml
 *.bcf
+.build/
+
+# Local deployment settings (see .env.example)
+.env
+__pycache__/
 
 # Editor / OS
 *.swp
@@ -23,3 +28,8 @@
 
 # Local Claude settings
 .claude/settings.local.json
+
+# Your documents are personal: never commit them. The empty folder is kept so
+# the bind mount is created with your ownership rather than root's.
+documents/*
+!documents/.gitkeep
