@@ -14,7 +14,7 @@ Two containers, defined in `docker-compose.yml`:
 | `latex-workspace-autoheal` | `willfarrell/autoheal:latest` | Restarts `latex-workspace` if its healthcheck fails |
 
 Published on host port **8585** (container port 8080), reachable over Tailscale at
-`http://ardi.tail351339.ts.net:8585`.
+`http://felixvm.tail9b94bb.ts.net:8585`.
 
 ## Prerequisites
 
@@ -23,6 +23,9 @@ Published on host port **8585** (container port 8080), reachable over Tailscale 
 - ~3.3 GB of disk for the built image (TeX Live is the bulk of it)
 - `/var/run/docker.sock` readable by the Docker daemon's user — autoheal mounts
   it read-write so it can issue restarts
+- Your user in the `docker` group. If you were added recently, `groups` in an
+  existing shell may still not show it — either open a new login session, or
+  run compose commands wrapped in `sg docker -c "..."` until you do.
 
 No `.env` file and no secrets. The service has no auth of its own; access
 control is Tailscale.
@@ -30,7 +33,7 @@ control is Tailscale.
 ## First Deploy
 
 ```bash
-cd ~/Projects/latex-workspace
+cd ~/work/latex-viewer
 docker compose up -d --build
 ```
 
@@ -56,7 +59,7 @@ On startup `server.py` compiles every project under `/documents` that has a
 still required:
 
 ```bash
-cd ~/Projects/latex-workspace
+cd ~/work/latex-viewer
 docker compose up -d --build
 ```
 
@@ -80,7 +83,7 @@ loses nothing. In-flight compiles are killed and re-run on startup.
 ## Stop, Start, Logs
 
 ```bash
-cd ~/Projects/latex-workspace
+cd ~/work/latex-viewer
 
 docker compose up -d          # start
 docker compose stop           # stop, keep containers
@@ -91,8 +94,8 @@ docker logs latex-workspace -f
 ```
 
 Both containers use `restart: unless-stopped`, so they come back automatically
-after a host reboot. Logs are also available in Dozzle at
-`http://ardi.tail351339.ts.net:8888`.
+after a host reboot. No Dozzle or Glance instance is set up on this host; if
+one is added later, point it at `latex-workspace` / `/healthz` as below.
 
 ## Data and Persistence
 
@@ -126,15 +129,14 @@ docker inspect --format '{{.State.Health.Status}}' latex-workspace
 docker inspect --format '{{json .State.Health}}' latex-workspace | python3 -m json.tool
 ```
 
-The service is listed on the Glance dashboard — `glance/config/home.yml`, the
-**Apps** monitor, entry "LaTeX Workspace". It has no `check-url` override
-because `/` returns 200. If you ever want Glance to probe the health endpoint
-instead, add:
+No Glance dashboard is configured on this host. If one is added later, add an
+**Apps** entry like this (the health endpoint returns 200, so `check-url` is
+optional but recommended):
 
 ```yaml
             - title: LaTeX Workspace
-              url: http://ardi.tail351339.ts.net:8585
-              check-url: http://ardi.tail351339.ts.net:8585/healthz
+              url: http://felixvm.tail9b94bb.ts.net:8585
+              check-url: http://felixvm.tail9b94bb.ts.net:8585/healthz
               icon: si:latex
 ```
 
@@ -219,7 +221,7 @@ To stop the restarts while you investigate, `docker compose stop autoheal`.
 ## Full Teardown
 
 ```bash
-cd ~/Projects/latex-workspace
+cd ~/work/latex-viewer
 docker compose down                          # remove both containers
 docker image rm latex-workspace-latex-workspace:latest   # reclaim ~3.3 GB
 ```

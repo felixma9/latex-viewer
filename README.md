@@ -23,7 +23,7 @@ The `documents/` folder is bind-mounted into the container. Everything you edit 
 Open in any browser on your Tailscale network:
 
 ```
-http://ardi.tail351339.ts.net:8585
+http://felixvm.tail9b94bb.ts.net:8585
 ```
 
 Select a project from the left sidebar to view its PDF. The status badge in the toolbar shows when a recompile is in progress or the PDF has updated.
@@ -51,7 +51,7 @@ To remove a project from the UI: delete or rename the folder.
 Open a file in Neovim:
 
 ```bash
-nvim ~/Projects/latex-workspace/documents/cv-main/main.tex
+nvim ~/work/latex-viewer/documents/cv-main/main.tex
 ```
 
 Save with `:w` — the container recompiles and the browser updates automatically within a few seconds.
@@ -86,7 +86,7 @@ If you want to force a recompile without saving, click the **Compile** button in
 ## Starting and Stopping
 
 ```bash
-cd ~/Projects/latex-workspace
+cd ~/work/latex-viewer
 
 docker compose up -d      # start
 docker compose down       # stop
