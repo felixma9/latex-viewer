@@ -1,0 +1,47 @@
+name: Publish resume to felixma9.github.io
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - documents/resume-general/main.tex
+      - .github/workflows/publish-resume.yml
+  workflow_dispatch:
+
+concurrency:
+  group: publish-resume
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build PDF
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+          working_directory: documents/resume-general
+
+      - name: Check out Pages repo
+        uses: actions/checkout@v4
+        with:
+          repository: felixma9/felixma9.github.io
+          ref: main
+          token: ${{ secrets.PAGES_PUSH_TOKEN }}
+          path: site
+
+      - name: Copy Resume.pdf and push
+        run: |
+          cp documents/resume-general/main.pdf site/Resume.pdf
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Resume.pdf
+          if git diff --cached --quiet; then
+            echo "Resume.pdf unchanged; nothing to push."
+            exit 0
+          fi
+          git commit -m "Update Resume.pdf from latex-viewer@${GITHUB_SHA::7}"
+          git push origin HEAD:main

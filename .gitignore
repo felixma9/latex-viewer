@@ -34,6 +34,11 @@ __pycache__/
 # the bind mount is created with your ownership rather than root's.
 documents/*
 !documents/.gitkeep
+# Exception (this fork): the master resume source is tracked and published to
+# felixma9.github.io by .github/workflows/publish-resume.yml. Only main.tex.
+!documents/resume-general/
+documents/resume-general/*
+!documents/resume-general/main.tex
 
 # SDD scratch workspace (subagent-driven development)
 .superpowers/

@@ -1,0 +1,384 @@
+%-------------------------
+% Resume in Latex
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{ifthen}
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\usepackage{multicol}
+\setlength{\multicolsep}{-3.0pt}
+\setlength{\columnsep}{-1pt}
+\input{glyphtounicode}
+
+\newboolean{hardware}
+\setboolean{hardware}{true}
+
+
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.6in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1.19in}
+\addtolength{\topmargin}{-.7in}
+\addtolength{\textheight}{1.4in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large\bfseries
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\classesList}[4]{
+    \item\small{
+        {#1 #2 #3 #4 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{1.0\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & \textbf{\small #2} \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{1.001\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & \textbf{\small #2}\\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemi{$\vcenter{\hbox{\tiny$\bullet$}}$}
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.0in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{document}
+
+%----------HEADING----------
+% \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+%   \textbf{\href{http://sourabhbajaj.com/}{\Large Sourabh Bajaj}} & Email : \href{mailto:sourabh@sourabhbajaj.com}{sourabh@sourabhbajaj.com}\\
+%   \href{http://sourabhbajaj.com/}{http://www.sourabhbajaj.com} & Mobile : +1-123-456-7890 \\
+% \end{tabular*}
+
+% \begin{center}
+%      \textbf{{\Huge Felix Ma}}
+%      \\ \text{aia.ardi12@gmail.com $\mid$ github.com/aftahiArdi $\mid$ linkedin.com/in/aftahi-ardi-a24337220/ $\mid$ (306) 261-2866}
+% \end{center}
+
+
+\begin{center}
+    {\Huge \scshape Felix Ma} \\ \vspace{1pt}
+    \href{https://www.linkedin.com/in/felix-hx-ma/}{\raisebox{-0.2\height}\faLinkedin\ linkedin.com/in/felix-hx-ma} $\mid$~
+    \small \raisebox{-0.1\height}\faPhone\ 778-985-1277 $\mid$~ \href{mailto:felixma.home@gmail.com}{\raisebox{-0.2\height}\faEnvelope\ felixma.home@gmail.com} 
+    % \href{https://felixma9.github.io/}{\raisebox{-0.2\height}\faGlobe\ felixma.tech}
+    % $\mid$ ~
+    % $\mid$~\href{https://github.com/felixma9}{\raisebox{-0.2\height}\faGithub\ github.com/felixma9}
+    \vspace{-8pt}
+\end{center}
+
+%-----------HIGHLIGHTS-----------
+% \section{Highlights}
+% \resumeSubHeadingListStart
+%         \resumeItemListStart
+%           \resumeItem{Team player and dedicated learner skilled in relaying technical information, with experience working with both software and hardware}
+%           \resumeItem{Knowledge and experience with software testing and Agile development cycle with Jira}
+%           \resumeItem{Implemented low-level projects in C, including OS161 operating system with file management and kernel functions}
+%           \resumeItem{Wrote large software projects with Java, including search engine and text analyzer, with rigorous unit testing via JUnit}
+%           \resumeItem{Ample experience with web development using React JS, having deployed a course schedule planner for UBC students}
+%           % \resumeItem{Written numerous projects in C, Java, and JS/ReactJS}
+%           \resumeItem{Familiar with computer hardware, with knowledge of SystemVerilog and FPGA programming}
+
+%     \resumeItemListEnd
+% \resumeSubHeadingListEnd
+
+%-----------EDUCATION-----------
+\vspace{-16pt}
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {University of British Columbia - GPA: 3.7/4.0}{Expected Grad: May 2027}
+      {Bachelor of Applied Science in Computer Engineering}{Vancouver, BC}
+      % \resumeItemListStart
+      %\resumeItem{Courses: Software Construction, Data Structures and Algorithms, Mathematical Proofs, Circuit Analysis, Operating Systems, Relational Databases, Machine Learning, Deep Learning}
+      % \resumeItem{\textbf{Relevant courses:} Software Engineering with Java, Data Structures and Algorithms with C++, Operating Systems with C, Digital Systems Design in SystemVerilog and Arm86 Assembly}
+      % \resumeItem{\textbf{Coop: Available for 4 to 12-month term between May 2024 and September 2025}}
+      % \resumeItem{\textbf{Coop: Able to commit to 4-month term beginning on May 20, 2024 and ending September 1, 2024, or any cycle in between}}
+      \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Relevant Courses: }{Data Structures and Algorithms (C++), Operating Systems (C), Digital Systems Design (SystemVerilog, Quartus, FPGA Programming), Software Engineering (Java)} \\
+     %\textbf{Networking Protocols}{: HTTP, TCP, and UDP}
+    }}
+\end{itemize}
+    % \resumeItemListEnd
+\resumeSubHeadingListEnd
+
+\vspace{-16pt}
+
+%-----------WORK EXPERIENCE-----------
+\section{Work Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {\href{https://rcl.ece.ubc.ca/home-page/}{UBC Robotics and Control Laboratory}}{January 2026 - September 2026}
+      {Research Software Engineer Intern}{Vancouver, BC}
+      \resumeItemListStart
+        % \resumeItem{Added iteration feature to \textbf{Python} code, resulting in more accurate estimates of speed of sound from ultrasound data}
+        % \resumeItem{Collected data and results from ultrasound trials, synthesizing them into an abstract comparing different beamformers' effects on global speed of sound calculations, to be submitted to IUS 2026}
+        % \resumeItem{Designed a new feature using \textbf{Copilot Pro} and \textbf{Claude} to display a live window of B/A parameter in tissue, with careful prompting to ensure code robustness and correctness}
+        % \resumeItem{Refactored \textbf{Python} codebase from hardcoded to plug-and-play, enabling researchers to test any platform}
+        \resumeItem{Designed and implemented \textbf{Python} class hierarchy to increase supported ultrasound platforms from \textbf{1} to \textbf{any amount}}
+        \resumeItem{Built custom beamformer in \textbf{Python}, eliminating the need to install previous library's \textbf{148}-package conda environment}
+        \resumeItem{Wrote \textbf{MATLAB} scripts using \textbf{K-Wave} to generate \textbf{10+} simulated phantoms, increasing data points by \textbf{10x}}
+        % \resumeItem{Wrote and maintained documentation including README, interactive \textbf{Jupyter Notebook} tutorials, and slideshow presentations to allow for better project onboarding}
+        % \resumeItem{Designed and implemented a comprehensive experiment-running framework, capable of running code analysis on a dataset using 50 different sets of starting conditions}
+      \resumeItemListEnd
+      
+
+    \resumeSubheading
+      {\href{https://www.transoftsolutions.com/}{Transoft Solutions \textnormal{}}}{May 2025 -- December 2025}
+      {Software Engineer Intern
+      % | \textbf{\textit{C++, Python, Visual Studio}}
+      }{Vancouver, BC}
+      \resumeItemListStart
+        \resumeItem{Implemented \textbf{C++} test generation framework with \textbf{MFC} frontend, expanding test coverage from \textbf{15\%} to \textbf{100\%}}
+        % \resumeItem{Improved \textbf{Python} querying application by spot testing functions and simplifying algorithms, allowing users to query database of 2680+ vehicles over \textbf{10x} faster than previously possible}
+        \resumeItem{Built \textbf{Qt}/\textbf{Python} tool adopted by QA team, cutting time to compile a list of \textbf{50-100} test vehicles by \textbf{95\%}}
+        \resumeItem{Identified \textbf{5} edge cases in \textbf{GTest} suite, adding coverage that uncovered \textbf{10} vehicles with faulty parameters}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {\href{https://www.excelar.ca}{Excelar \textnormal{}}}{September 2024 -- April 2025}
+      {Software Engineer Intern
+      % | \textbf{\textit{Typescript, Angular Jira/BitBucket}}
+      }{Burnaby, BC}
+      \resumeItemListStart
+        \resumeItem{Built \textbf{Angular} user management dashboard, consolidating \textbf{15} pages into \textbf{1}}
+        \resumeItem{Designed multi-page deployment flow for medical AI models, enabling \textbf{10+} non-technical staff to self-serve deployments}
+        \resumeItem{Resolved \textbf{90+} front-end tickets via \textbf{Angular}/\textbf{RxJS} fixes, cutting page load times by \textbf{50\%}}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+% \vspace{-16pt}
+\section{Technical Projects}
+\vspace{-4.5pt}
+
+\resumeSubHeadingListStart
+
+    \resumeProjectHeading
+        {\textbf{Custom x86 Operating System}
+        \textit{ | x86 Assembly, C, NASM, OpenWatcom, Bochs}}{April 2026 -- August 2026}
+        \resumeItemListStart
+            \resumeItem{Wrote two-stage \textbf{x86 Assembly}/\textbf{C} bootloader with a custom \textbf{FAT12} parser to load the kernel into RAM}
+            \resumeItem{Implemented \textbf{GDT}/\textbf{IDT}/\textbf{ISR} infrastructure for 32-bit protected mode and interrupt handling}
+            \resumeItem{Built physical memory manager with \textbf{paging}, using a bitmap allocator over BIOS \textbf{e820} map for \textbf{128MB} RAM}
+        \resumeItemListEnd
+
+    \vspace{-13pt}
+\ifthenelse{\boolean{hardware}}{
+    \resumeProjectHeading
+        {\textbf{RC4 Encryption Breaker}
+        \textit{ | SystemVerilog, FPGA, Quartus/ModelSim}}{June 2024}
+        \resumeItemListStart
+            \resumeItem{Wrote \textbf{SystemVerilog} code to read/write excrypted message to \textbf{FPGA} RAM}
+            \resumeItem{Designed \textbf{5} \textbf{SystemVerilog} finite state machines (5-12 states each) to brute-force crack encrypted messages}
+            \resumeItem{Verified \textbf{FPGA} design correctness via test benches and full-module simulation in \textbf{ModelSim}}
+        \resumeItemListEnd
+
+    \vspace{-13pt}
+    \resumeProjectHeading
+        {\textbf{FPGA Tone Organ}
+        \textit{ | SystemVerilog, FPGA, Quartus, SignalTap}}{May 2024}
+        \resumeItemListStart
+            \resumeItem{Built \textbf{SystemVerilog} frequency-divider module to convert a clock signal into audio frequencies}
+            \resumeItem{Synthesized \textbf{SystemVerilog} via \textbf{Quartus} and programmed \textbf{FPGA} to function as a tone player}
+            \resumeItem{Validated frequency and switch behavior using \textbf{SignalTap} and waveform simulation}
+        \resumeItemListEnd
+}{
+}            
+
+
+\ifthenelse{\boolean{hardware}}{
+}{
+    % \vspace{-13pt}
+    \resumeProjectHeading
+        {\textbf{Database Manager
+        % \textnormal{| Java, SQL}
+        }}{January 2024 -- April 2024}
+        \resumeItemListStart
+            \resumeItem{Developed and maintained a \textbf{Java} application for managing a remote \textbf{Oracle Database} via an \textbf{SSH} connection, ensuring secure data handling and user access}
+            \resumeItem{Engineered database schema, initializing 17 tables using \textbf{SQL} scripts to organize data for neighborhood gardens}
+            \resumeItem{Enhanced user interaction with the database by implementing \textbf{SQL} operations including selection, join, and divide, allowing complex data queries and management tasks}
+        \resumeItemListEnd
+}
+
+    % \vspace{-13pt}
+    %   \resumeProjectHeading{
+    %   {\textbf{OS161 Operating System
+    %   % \textnormal{| C, GDB, Linux}
+    %   }} \iffalse $|$ \emph{C, GDB, SSH, Linux, Git/GitHub}\fi}{September 2023 -- December 2023}
+    %   \resumeItemListStart
+    %        % \resumeItem{Demonstrated proficiency with C data structures and algorithms to write file management and system calls in OS161}
+    %        \resumeItem{Made use of \textbf{C} data structures and algorithms to write file management and low-level system calls in OS161, allowing the kernel to read/write files, efficiently manage file structures, and enhance overall system functionality}
+    %        \resumeItem{Implemented core subsystems in OS161, including \textbf{synchronization, process signaling}, and \textbf{memory management}}
+    %        \resumeItem{Leveraged \textbf{GDB} to perform kernel debugging using step-through and stack viewer to resolve faults in OS161}
+    %     \resumeItemListEnd
+           
+    % \vspace{-13pt}
+    %   \resumeProjectHeading{
+    %       \href{https://github.com/NakulGD/clash-course}{\textbf{Course Planner\textnormal{, Personal Project}}} \iffalse $|$ \emph{HTML/CSS, JS, Git/GitHub} \fi}{July 2023 -- August 2023}
+    %       \resumeItemListStart
+    %         \resumeItem{Developed a full-stack web application in HTML/CSS/React to assist students in visualizing university course schedules}
+    %         \resumeItem{Utilized JavaScript to implement a web-scraper tool to access course information from UBC, allowing students to retrieve course information by simply typing in the relevant course code}
+    %         \resumeItem{Implementing login system with SQL, allowing students to save combinations of classes to reference at course selection}
+    %       \resumeItemListEnd 
+
+      %     \vspace{-13pt}
+      % \resumeProjectHeading
+      %     {\textbf{Publisher/Subscriber system with Twitter API\textnormal{, UBC}} \iffalse $|$ \emph{Java, IntelliJ, JUnit, Git/GitHub, Twitter API}\fi}{December 2022}
+      %     \resumeItemListStart
+      %       \resumeItem{Implemented Java program using Twitter API allowing users to subscribe to users and have their tweets appear in a list}
+      %       \resumeItem{Designed scalable architecture to efficiently manage high data volumes, ensuring program ran smoothly in all cases}
+      %       \resumeItem{Ensured system reliability and efficiency through comprehensive testing and optimization}
+      %     \resumeItemListEnd
+          
+     % \vspace{-13pt}
+     %      \resumeProjectHeading{
+     %      \href{https://github.com/felixma9/Search-Engine}{\textbf{Predictive Text Search Engine\textnormal{, UBC}}} \iffalse $|$ \emph{Java, IntelliJ, JUnit, Git/GitHub}\fi}{Septmember 2022 -- October 2022}
+     %      \resumeItemListStart
+     %        \resumeItem{Built core functionalities of a search engine with Java, including auto-completion, sentiment analysis, and data analysis}
+     %        %\resumeItem{Used N-gram models for predictive text completion and efficient search query processing}
+     %        \resumeItem{Leveraged JUnit for comprehensive test coverage, writing and executing tests to identify and debug code issues, enhancing code quality and functionality}
+     %        \resumeItem{Ensured robustness and reliability through extensive unit testing and provided detailed documentation for each module}
+     %      \resumeItemListEnd 
+
+    \resumeSubHeadingListEnd
+
+  % \vspace{-13pt}
+
+  % \resumeSubHeadingListStart
+  %   \resumeSubheading
+  %     {UBC Geering Up Summer Camps}{June 2022 -- September 2022}
+  %     {Camps Instructor}{Vancouver, BC}
+  %     \resumeItemListStart
+  %       \resumeItem{Created and delivered engaging activities teaching STEM concepts to children between the ages of 5-13}
+  %       \resumeItem{Employed clear and concise communication techniques to teach complex concepts to young learners}
+  %       \resumeItem{Collaborated with instructors and parents to ensure a cohesive and effective educational experience}
+  %     \resumeItemListEnd
+  % \resumeSubHeadingListEnd
+
+
+%-----------OTHER EXPERIENCE-----------
+
+
+
+%   %-----------OTHER EXPERIENCE-----------
+% \section{Other Experience}
+%   \resumeSubHeadingListStart
+%     \resumeSubheading
+%       {UBC Geering Up Summer Camps}{June 2022 -- September 2022}
+%       {Camps Instructor}{Vancouver, BC}
+%       \resumeItemListStart
+%         \resumeItem{Delivered engaging STEM activities, demonstrating the application of technical knowledge in an educational setting}
+%         \resumeItem{Employed clear and concise communication techniques to teach complex concepts to young learners}
+%         \resumeItem{Worked collaboratively with instructors and parents to ensure a cohesive and effective educational experience}
+%       \resumeItemListEnd
+%   \resumeSubHeadingListEnd
+
+
+%-----------STUDENT DESIGN TEAMS-----------
+\vspace{-15pt}
+ \section{Student Design Team}
+    \resumeSubHeadingListStart
+ \resumeSubheading
+        {\href{https://github.com/ubclaunchpad/ubc-degree-navigator}
+          {UBC LaunchPad\textnormal{, Student Design Team}}}{September 2025 -- April 2026}
+          {Software Developer
+          %| ReactJS
+          } {Vancouver, BC}
+          \resumeItemListStart
+            \resumeItem{Integrated \textbf{NextJS} calendar component, streamlining volunteer scheduling for BC Brain Wellness Program}
+             \resumeItem{Implemented skeleton-loading components across \textbf{9} pages, improving perceived load speed in \textbf{NextJS} app}
+          \resumeItemListEnd
+      \resumeSubHeadingListEnd
+
+%-----------PROGRAMMING SKILLS-----------
+\vspace{-16pt}
+\section{Technical Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: C++, Python, Typescript, C, Java, SystemVerilog, MATLAB } \\
+     \textbf{Frameworks/Libraries}{: Matplotlib, Plotly, K-Wave } \\
+     \textbf{Developer Tools}{: Linux, Git, Visual Studio, Jira, GitHub, GitLab, Quartus } \\
+     % \textbf{Software}{: Quartus, IntelliJ, VSCode, Restful APIs, Linux } \\
+     %\textbf{Networking Protocols}{: HTTP, TCP, and UDP}
+    }}
+\end{itemize}
+
+\end{document}
