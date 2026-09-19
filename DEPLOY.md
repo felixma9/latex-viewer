@@ -68,6 +68,21 @@ did not exist), fix that on the host: `sudo chown -R "$USER": documents`.
   `/documents`, change the mount in `docker-compose.yml` to
   `./documents:/documents:z`.
 
+### Mobile shell
+
+The mobile shell at `/m` needs `poppler-utils` in the image (it is installed
+in its own `Dockerfile` layer, right after the TeX Live layer). After pulling
+a version that adds it, rebuild rather than just restarting, or `/page/` will
+return 502:
+
+    docker compose build && docker compose up -d
+
+Rendering resolution is `PAGE_DPI` in `server.py`, 150 by default. Raising it
+gives crisper pinch-zoom at the cost of larger images and slower first paint.
+
+Adding to an iPhone home screen works over plain HTTP. There is no service
+worker and no offline support; that would require serving over HTTPS.
+
 ## First Deploy
 
 ```bash
@@ -204,10 +219,15 @@ Already installed: `texlive-latex-extra`, `texlive-fonts-recommended`,
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /` | Single-page UI (HTML is embedded in `server.py`) |
+| `GET /m` | The mobile shell, installable to an iPhone home screen |
+| `GET /manifest.webmanifest` | PWA manifest for `/m` |
+| `GET /icon-180.png` | Home-screen icon (180×180, `apple-touch-icon`) |
+| `GET /icon-512.png` | Home-screen icon (512×512, manifest) |
 | `GET /healthz` | `{"status": "ok"}`, or 503 if the file watcher has not run for 30s — used by the container healthcheck |
 | `GET /projects` | JSON list of projects and whether each has a PDF |
 | `GET /pdf/<project>` | Serves `main.pdf`, `Cache-Control: no-cache`; waits up to 5s if the file is mid-write, then 503 |
-| `GET /mtime/<project>` | PDF mtime; the browser polls this every 2s to auto-reload |
+| `GET /page/<project>/<n>.png` | Page `n` rasterized to PNG at 150dpi (`PAGE_DPI` in `server.py`); rendered on first request and cached under `.build/pages/`; 404 if `<project>` or `<n>` is invalid or out of range, 502 if poppler is missing or rendering fails |
+| `GET /mtime/<project>` | PDF mtime, log mtime, compile status and page count; the browser polls this every 2s to auto-reload |
 | `GET /compile/<project>` | Triggers a compile (the toolbar **Compile** button) |
 
 Project names are resolved against `/documents` and rejected if they escape it,

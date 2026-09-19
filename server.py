@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import base64
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import threading
@@ -14,6 +16,11 @@ from urllib.parse import unquote, urlparse
 DOCUMENTS_DIR = Path("/documents")
 BUILD_DIRNAME = ".build"
 PORT = 8080
+PAGES_DIRNAME = "pages"  # under .build/, so a compile retry cannot unlink it
+PAGE_DPI = 150  # A4 at 150dpi is ~1240px wide: a 390pt iPhone at 3x
+PDFTOPPM_TIMEOUT = 60
+_page_locks: dict[str, threading.Lock] = {}
+_page_locks_guard = threading.Lock()
 
 _tex_mtimes: dict[str, float] = {}
 _compiling: set[str] = set()
@@ -327,6 +334,383 @@ def parse_log(text: str) -> dict:
         "ok": not fatal and counts["error"] == 0 and output is not None,
     }
 
+
+_PDFINFO_PAGES_RE = re.compile(r"^Pages:\s+(\d+)$", re.M)
+PDFINFO_TIMEOUT = 10
+# project path -> (log mtime, pdf mtime, pages)
+_page_counts: dict[str, tuple[float, float, int]] = {}
+
+
+def _page_count(project_dir: Path) -> int:
+    """How many pages main.pdf has, or 0 if that cannot be determined.
+
+    pdflatex records the count in main.log, so the common case costs a file
+    read. A PDF compiled outside this container has no matching log, so fall
+    back to asking poppler.
+
+    Memoized on both mtimes: /mtime/ is polled every 2s per connected client,
+    and re-parsing the whole log on every poll would be wasteful.
+    """
+    key = str(project_dir)
+    log_m = _mtime(project_dir / "main.log")
+    pdf_m = _mtime(project_dir / "main.pdf")
+    cached = _page_counts.get(key)
+    if cached and cached[0] == log_m and cached[1] == pdf_m:
+        return cached[2]
+
+    count = _compute_page_count(project_dir)
+    _page_counts[key] = (log_m, pdf_m, count)
+    return count
+
+
+def _compute_page_count(project_dir: Path) -> int:
+    try:
+        parsed = parse_log((project_dir / "main.log").read_text(errors="replace"))
+    except OSError:
+        parsed = None
+    if parsed and parsed["output"]:
+        return parsed["output"]["pages"]
+
+    pdf = project_dir / "main.pdf"
+    if not pdf.exists():
+        return 0
+    try:
+        out = subprocess.run(
+            ["pdfinfo", str(pdf)],
+            capture_output=True, text=True, timeout=PDFINFO_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    m = _PDFINFO_PAGES_RE.search(out.stdout)
+    return int(m.group(1)) if m else 0
+
+
+def _page_lock(name: str) -> threading.Lock:
+    with _page_locks_guard:
+        return _page_locks.setdefault(name, threading.Lock())
+
+
+def _render_page(project_dir: Path, n: int, mtime_ns: int) -> bytes | None:
+    """PNG bytes for page `n`, rasterizing through poppler if not cached.
+
+    Cached under .build/pages/<mtime_ns>-<n>.png. The nanosecond mtime in the
+    name means a recompile invalidates every page without any explicit
+    invalidation step, and two compiles landing in the same whole second
+    still get distinct cache entries; pages from older mtimes are swept on
+    the first request after the change.
+
+    Returns None if poppler is missing or the render fails.
+    """
+    cache = project_dir / BUILD_DIRNAME / PAGES_DIRNAME
+    stamp = str(mtime_ns)
+    target = cache / f"{stamp}-{n}.png"
+
+    # A finished page is published with os.replace(), so a reader sees either
+    # the whole file or none of it. Serving it without taking the lock keeps a
+    # cached page from waiting behind another page's render.
+    try:
+        return target.read_bytes()
+    except OSError:
+        pass
+
+    # One render at a time per project: it stops two requests racing to render
+    # the same page, and it stops one request's sweep from deleting another's
+    # freshly written output for the same project.
+    with _page_lock(project_dir.name):
+        # Another thread may have rendered this page while we waited.
+        try:
+            return target.read_bytes()
+        except OSError:
+            pass
+
+        try:
+            cache.mkdir(parents=True, exist_ok=True)
+            for old in cache.glob("*.png"):
+                if not old.name.startswith(f"{stamp}-"):
+                    old.unlink(missing_ok=True)
+        except OSError:
+            return None
+
+        # pdftoppm zero-pads its output suffix based on the page count, so
+        # render into a private directory and take whatever single file lands.
+        scratch = cache / f"tmp-{n}"
+        shutil.rmtree(scratch, ignore_errors=True)
+        try:
+            scratch.mkdir()
+            subprocess.run(
+                ["pdftoppm", "-png", "-r", str(PAGE_DPI), "-f", str(n), "-l", str(n),
+                 str(project_dir / "main.pdf"), str(scratch / "p")],
+                check=True, capture_output=True, timeout=PDFTOPPM_TIMEOUT,
+            )
+            produced = sorted(scratch.glob("*.png"))
+            if not produced:
+                return None
+            data = produced[0].read_bytes()
+            os.replace(produced[0], target)  # same filesystem, so atomic
+            return data
+        except FileNotFoundError:
+            print(f"pdftoppm not found: cannot rasterize {project_dir.name}. "
+                  "Is poppler-utils installed in the image?")
+            return None
+        except subprocess.TimeoutExpired:
+            print(f"pdftoppm timed out after {PDFTOPPM_TIMEOUT}s "
+                  f"on {project_dir.name} page {n}")
+            return None
+        except subprocess.CalledProcessError as exc:
+            err = (exc.stderr or b"").decode(errors="replace").strip()
+            print(f"pdftoppm failed on {project_dir.name} page {n}: {err}")
+            return None
+        except OSError as exc:
+            print(f"Could not rasterize {project_dir.name} page {n}: {exc!r}")
+            return None
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
+ICON_180_B64 = (
+    "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"
+)
+
+ICON_512_B64 = (
+    "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"
+    "h8JaEXiBUk6eRluZmbTZbErZ8TMVpcbrY424zm+WAODETC2NMS85bakUNvBKxnb4HNMqqXfs3TxW"
+    "O6q1Y3NwNKSUWZZWyxOWL1hobCZER0dASdmM66efttQYI4Xk90sA8ELHlziN3/WaDyqml0IYa0u+"
+    "fP/n33nfxjVlp5qTAERJc/mMhf/zP361Hln+TK0/U5xEkkNBAHBCRHHTdvz+shDCWCNEKYf7YMaY"
+    "emTqUZ3t79ayldGfAOBETjNZUB/fZFC5/WCtf/I3QmF+TRwCACAAAAACAAAgAAAAAgAAIAAAAAIA"
+    "ACAAAAACAAAgAAAAAgAAIAAAAAIAACAAAAACAAAgAAAAAgAAIAAAAAIAACAAAAACAAAgAAAAAgAA"
+    "IAAAQAAAAAQAAEAAAAAEAABAAAAABAAAQAAAAAQAAEAAAAAEAABAAAAABAAAQAAAAAQAAEAAAAAE"
+    "AABAAAAABAAAQAAAAAQAAEAAAAAEAABAAACAAAAACAAAgAAAAAgAAIAAAAAIAACAAAAACAAAgAAA"
+    "AAgAAIAAAAAIAACAAAAACAAAgAAAAAgAAIAAAAAIAACAAAAACAAAgAAAAAgAAIAAAAAIAAAQAAAA"
+    "AQAAEAAAAAEAABAAAAABAAAQAAAAAQAAEAAAAAEAABAAAAABAAAQAAAAAQAAEAAAAAEAABAAAAAB"
+    "AAAQAAAAAQAAEAAAAAEAABAAACAAAAACAAAgAAAAAgAAIAAAAAIAACAAAAACAAAgAAAAAgAAIAAA"
+    "AAIAACAAAAACAAAgAACAk8fhEAAnhLHGWMNx+P9MOSWTTgIAtNm4plTJV0KUlZQcjWdihYjiSAjL"
+    "oSAAQFsMatb6brBjcPP7P/dOYzMhCMDvIaXIsqwcVv7TGz9eCiqZySSlJABAGwRAKWesdvTejWsY"
+    "0545ADLN0q7yxNSkDP0EAGirCmjlVEpdbG48ewDKYUWyQiIAQLsVQFhrMo7DswTAGGMMJ8nzhTPy"
+    "AEAAAAAEAABAAAAABAAAQAAAAAQAAEAAAAAEAABAAAAABAAAQAAAAAQAAEAAAAAEAABAAAAABAAA"
+    "QAAAAAQAAEAAAAAEAABAAAAABAAAQAAAgAAAAAgAAIAAAAAIAACAAAAACAAAgAAAAAgAAIAAAAAI"
+    "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"
+)
+
+ICON_180 = base64.b64decode(ICON_180_B64)
+ICON_512 = base64.b64decode(ICON_512_B64)
+
+MANIFEST = json.dumps({
+    "name": "LaTeX Workspace",
+    "short_name": "LaTeX",
+    "start_url": "/m",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#1e1e2e",
+    "theme_color": "#1e1e2e",
+    "icons": [
+        {"src": "/icon-180.png", "sizes": "180x180", "type": "image/png"},
+        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png",
+         "purpose": "any maskable"},
+    ],
+}).encode()
 
 INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -928,6 +1312,451 @@ if (location.hash.length > 1) select(decodeURIComponent(location.hash.slice(1)))
 </html>
 """
 
+MOBILE_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e1e2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LaTeX">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>LaTeX Workspace</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
+    --s0: #313244; --s1: #45475a; --o0: #6c7086; --sub: #a6adc8; --text: #cdd6f4;
+    --red: #f38ba8; --yellow: #f9e2af; --peach: #fab387; --green: #a6e3a1;
+    --blue: #89b4fa; --mauve: #cba6f7;
+    --top: env(safe-area-inset-top); --bot: env(safe-area-inset-bottom);
+  }
+  html { background: var(--base); }
+  body {
+    font: 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--base); color: var(--text);
+    min-height: 100vh; -webkit-text-size-adjust: 100%; overscroll-behavior-y: contain;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; }
+  [hidden] { display: none !important; }
+
+  header {
+    position: sticky; top: 0; z-index: 30;
+    padding: calc(var(--top) + 8px) 12px 8px;
+    background: #181825f2; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--s0);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .burger { font-size: 20px; line-height: 1; padding: 6px 8px; color: var(--sub);
+            min-width: 44px; min-height: 44px; }
+  .title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--s1); flex-shrink: 0; }
+  .dot.compiling { background: var(--yellow); animation: pulse 1s ease-in-out infinite; }
+  .dot.ready { background: var(--green); }
+  .dot.updated { background: var(--blue); }
+  .dot.error { background: var(--red); }
+  .dot.offline { background: var(--o0); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .state { font-size: 12px; color: var(--o0); }
+
+  .scrim { position: fixed; inset: 0; z-index: 40; background: #11111baa;
+           opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; z-index: 41; top: 0; bottom: 0; left: 0; width: min(78vw, 300px);
+    background: var(--mantle); border-right: 1px solid var(--s0);
+    padding: calc(var(--top) + 16px) 10px calc(var(--bot) + 16px);
+    transform: translateX(-100%); transition: transform .22s ease;
+    display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
+  }
+  .drawer.open { transform: none; }
+  .drawer h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+               color: var(--o0); padding: 0 10px 10px; }
+  .proj { display: flex; align-items: center; gap: 9px; padding: 13px 12px;
+          border-radius: 8px; font-size: 15px; color: #bac2de; text-align: left; width: 100%; }
+  .proj.active { background: var(--s1); color: var(--text); font-weight: 600; }
+  .proj .pn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drawer .fill { flex: 1; }
+  .compile { margin: 0 4px; padding: 14px; border-radius: 10px;
+             background: var(--mauve); color: var(--base); font-weight: 700; }
+  .compile:disabled { opacity: .5; }
+
+  /* Bottom padding clears the fixed problem strip added in Task 7. */
+  #main { padding: 10px 10px calc(var(--bot) + 64px); }
+  #pages { display: flex; flex-direction: column; gap: 10px; }
+  .page { display: block; width: 100%; height: auto; border-radius: 6px;
+          background: #fff; box-shadow: 0 1px 6px #11111b80; }
+  .page.failed { aspect-ratio: 1 / 1.414; display: flex; align-items: center;
+                 justify-content: center; background: var(--mantle);
+                 color: var(--o0); font-size: 13px; border: 1px dashed var(--s0); }
+
+  .ptr { height: 0; overflow: hidden; display: flex; align-items: center;
+         justify-content: center; color: var(--o0); font-size: 13px;
+         transition: height .16s; }
+  .ptr.armed { color: var(--mauve); }
+
+  .strip {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 22;
+    padding: 11px 16px calc(var(--bot) + 11px);
+    background: #181825f2; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--s0);
+    display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--sub);
+  }
+  .strip .caret { margin-left: auto; color: var(--o0); transition: transform .2s; }
+  .strip.open .caret { transform: rotate(180deg); }
+  .sev { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .sev.error { background: var(--red); }
+  .sev.warning { background: var(--yellow); }
+  .sev.badbox { background: var(--peach); border-radius: 2px; }
+  .n { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .n.zero { opacity: .4; }
+
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+    max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: var(--crust); border-top: 1px solid var(--s0);
+    border-radius: 14px 14px 0 0;
+    padding: 8px 0 calc(var(--bot) + 64px);
+    transform: translateY(100%); transition: transform .22s ease;
+  }
+  .sheet.open { transform: none; }
+  .prob { display: flex; gap: 10px; align-items: baseline;
+          padding: 11px 16px; border-bottom: 1px solid #1e1e2e; }
+  .prob .msg { flex: 1; min-width: 0; font: 12.5px/1.5 ui-monospace, Menlo, monospace;
+               overflow-wrap: anywhere; }
+  .prob.error .msg { color: #f5c2d0; }
+  .prob .at { color: var(--o0); font-size: 11px; white-space: nowrap; }
+  .sheet .none { padding: 26px 16px; text-align: center; color: var(--o0); font-size: 13px; }
+
+  .empty { padding: 25vh 24px; text-align: center; color: var(--o0); line-height: 1.6; }
+  .empty span { display: block; font-size: 34px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <button class="burger" id="burger" aria-label="Projects" aria-expanded="false">&#9776;</button>
+  <span class="title" id="title">LaTeX Workspace</span>
+  <span class="dot" id="dot"></span>
+  <span class="state" id="state"></span>
+</header>
+
+<main id="main">
+  <div class="ptr" id="ptr">Pull to recompile</div>
+  <div id="pages"><div class="empty"><span>&#128196;</span>Choose a project</div></div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<nav class="drawer" id="drawer" aria-label="Projects">
+  <h2>Projects</h2>
+  <div id="projects"></div>
+  <div class="fill"></div>
+  <button class="compile" id="compile">Compile</button>
+</nav>
+
+<div class="sheet" id="sheet"></div>
+<div class="strip" id="strip" role="button" tabindex="0" aria-controls="sheet" aria-expanded="false" hidden></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('lwm.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('lwm.' + k, JSON.stringify(v)); } catch {} },
+};
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+let current = null, projects = [];
+let pages = 0, pdfMtime = 0, logMtime = -1, compileError = null, logData = null;
+let compiling = false, online = true, flashUntil = 0;
+
+/* ---------- drawer ---------- */
+
+function setDrawer(open) {
+  $('drawer').classList.toggle('open', open);
+  $('scrim').classList.toggle('open', open);
+  $('burger').setAttribute('aria-expanded', open);
+}
+$('burger').addEventListener('click', () => setDrawer(!$('drawer').classList.contains('open')));
+$('scrim').addEventListener('click', () => setDrawer(false));
+addEventListener('keydown', e => { if (e.key === 'Escape') setDrawer(false); });
+
+/* ---------- projects ---------- */
+
+async function refreshProjects() {
+  if (document.hidden) return;  // backgrounded PWAs stay quiet
+  let list;
+  try {
+    list = await (await fetch('/projects')).json();
+  } catch { return; }
+  projects = list;
+  $('projects').innerHTML = list.map(p =>
+    `<button class="proj${p.name === current ? ' active' : ''}" data-name="${esc(p.name)}">` +
+    `<span class="pn">${esc(p.name)}</span></button>`
+  ).join('') || '<div class="empty" style="padding:24px 12px">No projects</div>';
+
+  if (!current) {
+    const remembered = store.get('project', null);
+    const pick = list.find(p => p.name === remembered) || list[0];
+    if (pick) selectProject(pick.name);
+  }
+}
+
+$('projects').addEventListener('click', e => {
+  const btn = e.target.closest('.proj');
+  if (btn) { selectProject(btn.dataset.name); setDrawer(false); }
+});
+
+function selectProject(name) {
+  if (name === current) return;
+  clearTimeout(timer);
+  current = name;
+  store.set('project', name);
+  pages = 0; pdfMtime = 0; logMtime = -1; compileError = null; logData = null;
+  renderIssues();
+  showPages();
+  $('title').textContent = name;
+  document.title = name + ' · LaTeX';
+  refreshProjects();
+  renderStatus();
+  poll();
+}
+
+/* ---------- status ---------- */
+
+function setDot(cls, text) {
+  $('dot').className = 'dot ' + cls;
+  $('state').textContent = text;
+}
+
+function renderStatus() {
+  if (!online) return setDot('offline', "can't reach server");
+  if (!current) return setDot('', '');
+  if (compiling) return setDot('compiling', '');
+  if (Date.now() < flashUntil) {
+    setTimeout(renderStatus, flashUntil - Date.now() + 20);
+    return setDot('updated', 'updated');
+  }
+  if (!logData) return setDot('', '');
+  if (logData.compile_error || (logData.exists && !logData.ok)) return setDot('error', 'failed');
+  setDot('ready', '');
+}
+
+/* ---------- pages ---------- */
+
+function showPages() {
+  const area = $('pages');
+  if (!current) {
+    area.innerHTML = '<div class="empty"><span>&#128196;</span>Choose a project</div>';
+    return;
+  }
+  if (!pdfMtime || !pages) {
+    const why = logData && logData.exists && !logData.ok ? 'the last compile failed' : 'nothing built yet';
+    area.innerHTML = '<div class="empty"><span>&#128196;</span>No PDF &mdash; ' + why + '</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (let n = 1; n <= pages; n++) {
+    const img = document.createElement('img');
+    img.className = 'page';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.alt = 'Page ' + n;
+    // Hold an A4 slot until the real dimensions arrive, so lazy loads further
+    // down the document do not yank the scroll position around.
+    img.style.aspectRatio = '1 / 1.414';
+    img.addEventListener('load', () => { img.style.aspectRatio = 'auto'; }, { once: true });
+    img.addEventListener('error', () => {
+      img.replaceWith(Object.assign(document.createElement('div'),
+        { className: 'page failed', textContent: 'Page ' + n + ' failed to render' }));
+    }, { once: true });
+    img.src = '/page/' + encodeURIComponent(current) + '/' + n + '.png' + '?t=' + pdfMtime;
+    frag.appendChild(img);
+  }
+  area.replaceChildren(frag);
+}
+
+/* ---------- compile ---------- */
+
+$('compile').addEventListener('click', compileNow);
+
+async function compileNow() {
+  if (!current) return;
+  clearTimeout(timer);
+  compiling = true;
+  renderStatus();
+  setDrawer(false);
+  try { await fetch('/compile/' + encodeURIComponent(current)); } catch {}
+  setTimeout(poll, 800);
+}
+
+/* ---------- polling ---------- */
+
+const BACKOFF = [2000, 5000, 15000, 30000];
+let failures = 0, timer = null;
+
+function schedule() {
+  clearTimeout(timer);
+  // A backgrounded PWA must not keep a 2s request loop running in a pocket.
+  if (document.hidden || !current) return;
+  timer = setTimeout(poll, BACKOFF[Math.min(failures, BACKOFF.length - 1)]);
+}
+
+async function poll() {
+  if (!current) return;
+  const name = current;
+  let s;
+  try {
+    s = await (await fetch('/mtime/' + encodeURIComponent(name))).json();
+  } catch {
+    if (name !== current) return;
+    failures++;
+    online = false;
+    renderStatus();
+    schedule();
+    return;
+  }
+  if (name !== current) return;
+  failures = 0;
+  online = true;
+
+  compiling = s.compiling;
+  if (s.mtime !== pdfMtime || s.pages !== pages) {
+    const first = pdfMtime === 0;
+    pdfMtime = s.mtime;
+    pages = s.pages;
+    showPages();
+    if (!first && pdfMtime) flashUntil = Date.now() + 2000;
+  }
+  if (s.log_mtime !== logMtime || s.compile_error !== compileError) {
+    if (await loadLog(name)) {
+      logMtime = s.log_mtime;
+      compileError = s.compile_error;
+    }
+  }
+  renderStatus();
+  schedule();
+}
+
+async function loadLog(name) {
+  let data;
+  try {
+    data = await (await fetch('/log/' + encodeURIComponent(name))).json();
+  } catch { return false; }
+  if (name !== current) return false;
+  logData = data;
+  if (!pdfMtime) showPages();
+  renderIssues();
+  return true;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearTimeout(timer); return; }
+  failures = 0;
+  if (document.querySelector('.page.failed')) showPages();
+  poll();
+});
+
+refreshProjects();
+setInterval(refreshProjects, 5000);
+
+/* ---------- pull to recompile ---------- */
+
+(function () {
+  const THRESHOLD = 70, MAX = 90;
+  const ptr = $('ptr');
+  let startY = null, armed = false;
+
+  addEventListener('touchstart', e => {
+    // Only arm at the very top, or this fights the normal scroll. Never arm
+    // inside the problems sheet or the project drawer (both their own
+    // scrollers), or while the page is pinch-zoomed.
+    const inOverlay = e.target.closest('#sheet, #drawer')
+      || $('drawer').classList.contains('open')
+      || $('sheet').classList.contains('open');
+    const zoomed = window.visualViewport && visualViewport.scale > 1;
+    startY = (scrollY <= 0 && e.touches.length === 1 && !inOverlay && !zoomed)
+      ? e.touches[0].clientY : null;
+    armed = false;
+  }, { passive: true });
+
+  addEventListener('touchmove', e => {
+    if (startY === null) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0) { ptr.style.height = '0px'; return; }
+    const h = Math.min(dy * 0.5, MAX);
+    ptr.style.height = h + 'px';
+    armed = h >= THRESHOLD * 0.5;
+    ptr.classList.toggle('armed', armed);
+    ptr.textContent = armed ? 'Release to recompile' : 'Pull to recompile';
+  }, { passive: true });
+
+  addEventListener('touchend', () => {
+    if (startY !== null && armed) compileNow();
+    startY = null; armed = false;
+    ptr.style.height = '0px';
+    ptr.classList.remove('armed');
+  }, { passive: true });
+})();
+
+/* ---------- problems ---------- */
+
+const KIND_ORDER = { error: 0, warning: 1, badbox: 2 };
+const KIND_LABEL = { error: 'error', warning: 'warning', badbox: 'bad box' };
+const brokeSeen = {};
+
+function setSheet(open) {
+  $('sheet').classList.toggle('open', open);
+  $('strip').classList.toggle('open', open);
+  $('strip').setAttribute('aria-expanded', open);
+}
+$('strip').addEventListener('click', () => setSheet(!$('sheet').classList.contains('open')));
+$('strip').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('strip').click(); }
+});
+
+function renderIssues() {
+  const strip = $('strip');
+  if (!logData) { strip.hidden = true; setSheet(false); return; }
+  const c = logData.counts || { error: 0, warning: 0, badbox: 0 };
+  const total = c.error + c.warning + c.badbox;
+  const broke = !!(logData.compile_error || (logData.exists && !logData.ok));
+  if (!total && !broke) { strip.hidden = true; setSheet(false); return; }
+
+  strip.hidden = false;
+  strip.innerHTML =
+    ['error', 'warning', 'badbox'].map(k =>
+      `<span class="n${c[k] ? '' : ' zero'}"><i class="sev ${k}"></i>${c[k]}</span>`
+    ).join('') + '<span class="caret">&#9652;</span>';
+
+  const problems = (logData.problems || []).slice().sort(
+    (a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]
+  );
+  const rows = problems.map(p =>
+    `<div class="prob ${p.kind}"><i class="sev ${p.kind}"></i>` +
+    `<span class="msg">${esc(p.message)}</span>` +
+    `<span class="at">${p.line ? 'main.tex:' + p.line : KIND_LABEL[p.kind]}</span></div>`
+  ).join('');
+
+  $('sheet').innerHTML =
+    (logData.compile_error
+      ? `<div class="prob error"><i class="sev error"></i>` +
+        `<span class="msg">${esc(logData.compile_error)}</span></div>`
+      : '') +
+    (rows || (logData.compile_error ? '' : '<div class="none">Nothing to report</div>'));
+
+  // Surface a newly broken build without the user having to go looking.
+  if (broke && !brokeSeen[current]) setSheet(true);
+  brokeSeen[current] = broke;
+}
+</script>
+</body>
+</html>
+"""
+
 
 class Handler(BaseHTTPRequestHandler):
     timeout = 30
@@ -946,12 +1775,24 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if p in ("/", "/index.html"):
                 self._send(200, "text/html", INDEX_HTML.encode())
+            elif p == "/m":
+                self._send(200, "text/html", MOBILE_HTML.encode())
             elif p == "/healthz":
                 self._serve_health()
+            elif p == "/manifest.webmanifest":
+                self._send(200, "application/manifest+json", MANIFEST)
+            elif p == "/icon-180.png":
+                self._send(200, "image/png", ICON_180,
+                           {"Cache-Control": "public, max-age=86400"})
+            elif p == "/icon-512.png":
+                self._send(200, "image/png", ICON_512,
+                           {"Cache-Control": "public, max-age=86400"})
             elif p == "/projects":
                 self._json(self._list_projects())
             elif p.startswith("/pdf/"):
                 self._serve_pdf(p[5:])
+            elif p.startswith("/page/"):
+                self._serve_page(p[6:])
             elif p.startswith("/log/"):
                 self._serve_log(p[5:])
             elif p.startswith("/rawlog/"):
@@ -1018,6 +1859,43 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.25)
         self._send(200, "application/pdf", data, {"Cache-Control": "no-cache"})
 
+    def _serve_page(self, rest: str) -> None:
+        """GET /page/<project>/<n>.png — one rasterized page for the mobile shell."""
+        name, _, leaf = rest.rpartition("/")
+        if not name or not leaf.endswith(".png"):
+            self.send_error(404)
+            return
+        d = self._project_dir(name)
+        if d is None:
+            self.send_error(404)
+            return
+        try:
+            n = int(leaf[:-4])
+        except ValueError:
+            self.send_error(404)
+            return
+        # Bound the page number before shelling out, so a bad request can
+        # never reach poppler.
+        if not 1 <= n <= _page_count(d):
+            self.send_error(404)
+            return
+        try:
+            mtime_ns = (d / "main.pdf").stat().st_mtime_ns
+        except OSError:
+            mtime_ns = 0
+        if not mtime_ns:
+            self.send_error(404)
+            return
+        png = _render_page(d, n, mtime_ns)
+        if png is None:
+            self.send_error(502, "Could not rasterize page")
+            return
+        # Safe to cache forever: a recompile changes the PDF's mtime, and
+        # therefore the URL the client requests, so a stale cached response
+        # is never reused for the current PDF.
+        self._send(200, "image/png", png,
+                   {"Cache-Control": "public, max-age=31536000, immutable"})
+
     def _serve_health(self) -> None:
         stale = time.monotonic() - _watch_heartbeat
         if stale > WATCH_STALE_AFTER:
@@ -1035,6 +1913,7 @@ class Handler(BaseHTTPRequestHandler):
             "log_mtime": _mtime(d / "main.log") if d else 0,
             "compiling": d is not None and d.name in _compiling,
             "compile_error": _compile_errors.get(d.name) if d else None,
+            "pages": _page_count(d) if d else 0,
         })
 
     def _serve_log(self, name: str) -> None:

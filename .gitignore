@@ -21,6 +21,7 @@
 # Local deployment settings (see .env.example)
 .env
 __pycache__/
+.pytest_cache/
 
 # Editor / OS
 *.swp
@@ -33,3 +34,6 @@ __pycache__/
 # the bind mount is created with your ownership rather than root's.
 documents/*
 !documents/.gitkeep
+
+# SDD scratch workspace (subagent-driven development)
+.superpowers/

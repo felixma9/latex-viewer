@@ -92,6 +92,20 @@ To force a recompile without saving, click **Compile** in the browser toolbar.
   compiler, since the container compiles for you.
 - `texlab` for completions and diagnostics: `:MasonInstall texlab`.
 
+## On a phone
+
+`http://<host>:8585/m` is a touch-friendly version of the viewer: project
+switcher, the PDF as scrollable page images, Compile, and a summary of compile
+problems. On iOS, open it in Safari and use **Share → Add to Home Screen** to
+install it as an app; it then opens fullscreen with its own icon.
+
+Pages are rasterized by `pdftoppm` on request and cached under `.build/pages/`,
+so the desktop viewer is unaffected and nothing is rendered until a phone asks
+for it. The mobile shell needs the server reachable to work — there is no
+offline mode.
+
+The desktop viewer at `/` is unchanged.
+
 ## Starting and Stopping
 
 ```bash
@@ -107,10 +121,13 @@ as long as Docker itself starts on boot.
 
 ```
 latex-workspace/
-├── Dockerfile            # debian-slim + TeX Live + python3
+├── Dockerfile            # debian-slim + TeX Live + poppler-utils + python3
 ├── docker-compose.yml    # port mapping, documents/ bind mount, autoheal
 ├── .env.example          # optional port / bind address / Docker socket settings
 ├── server.py             # HTTP server, file watcher, pdflatex runner, log parser
+├── tools/
+│   └── make_icons.py     # generates the PWA home-screen icons
+├── tests/                # pytest suite (server routes, mobile shell, page rendering, …)
 └── documents/            # your .tex projects live here (gitignored)
     └── cv-main/
         └── main.tex
