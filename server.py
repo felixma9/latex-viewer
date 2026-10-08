@@ -723,6 +723,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   :root {
     --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
     --s0: #313244; --s1: #45475a; --o0: #6c7086; --sub: #a6adc8; --text: #cdd6f4;
+# What the dashboard's Apps table shows for this app (the shape every app serves at /api/app.json).
+APP_INFO = {"id": "latex-viewer", "name": "LaTeX viewer", "calls": [],
+            "description": "Edit, compile and preview LaTeX projects and markdown notes"}
+
     --red: #f38ba8; --yellow: #f9e2af; --peach: #fab387; --green: #a6e3a1; --blue: #89b4fa; --mauve: #cba6f7;
     --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
@@ -1959,6 +1963,8 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def _serve_raw_log(self, name: str) -> None:
+            elif p == "/api/app.json":
+                self._json(APP_INFO)
         d = self._project_dir(name)
         try:
             data = (d / "main.log").read_bytes() if d else None
